@@ -297,6 +297,37 @@ func TestSettingsOnlyInLobby(t *testing.T) {
 	}
 }
 
+func TestLoadingTimesOut(t *testing.T) {
+	h := newHarness(t)
+	h.e.BeginLoading()
+	h.advance(LoadingTimeoutMs - 1)
+	if h.e.State().Phase != PhaseLoading {
+		t.Fatal("gave up too early")
+	}
+	h.advance(1)
+	if s := h.e.State(); s.Phase != PhaseLobby || s.Error != MsgLoadingInterrupted {
+		t.Fatalf("stuck loading: %+v", s)
+	}
+}
+
+func TestLoadingTimeoutClearedByStart(t *testing.T) {
+	h := newHarness(t)
+	startGame(t, h, 2, 25, 5)
+	h.advance(LoadingTimeoutMs)
+	if h.e.State().Phase == PhaseLobby {
+		t.Fatal("loading timeout fired after the game started")
+	}
+}
+
+func TestOversizedSourceIgnored(t *testing.T) {
+	h := newHarness(t)
+	big := GameSettings{Source: json.RawMessage(`{"kind":"custom","name":"` + strings.Repeat("x", MaxSourceBytes) + `"}`), Rounds: 7, RoundSeconds: 5}
+	h.e.UpdateSettings(big)
+	if s := h.e.State().Settings; s.Rounds == 7 || len(s.Source) > MaxSourceBytes {
+		t.Fatalf("oversized settings accepted (%d bytes)", len(s.Source))
+	}
+}
+
 func TestSetHost(t *testing.T) {
 	h := newHarness(t)
 	v := h.e.State().Version

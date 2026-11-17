@@ -15,7 +15,13 @@ const (
 	EarlyMs      = 600  // beat after the last answer so the tap registers visually
 	MaxPlayers   = 30
 	MaxQuestions = 30
+	// LoadingTimeoutMs: a host who closes the tab mid-fetch must not leave the room stuck.
+	LoadingTimeoutMs = 60_000
+	// MaxSourceBytes caps settings.source, which is resent in every state frame.
+	MaxSourceBytes = 32 << 10
 )
+
+const MsgLoadingInterrupted = "การโหลดเพลงถูกขัดจังหวะ กดเริ่มเกมใหม่อีกครั้ง"
 
 type Options struct {
 	HostID, HostName, HostColor string
@@ -134,19 +140,30 @@ func (e *Engine) SyncMembers(members []Member) {
 }
 
 func (e *Engine) UpdateSettings(s GameSettings) {
-	if e.st.Phase != PhaseLobby {
+	if e.st.Phase != PhaseLobby || len(s.Source) > MaxSourceBytes {
 		return
 	}
 	s = s.Clamp()
 	e.commit(func(st *GameState) { st.Settings = s; st.Error = ""; st.Notice = "" })
 }
 
-// SetHost moves host controls to another player.
+// SetHost moves host controls to another player. A load the old host started is
+// abandoned (only their browser was fetching the songs).
 func (e *Engine) SetHost(id string) {
 	if id == "" || id == e.st.HostID {
 		return
 	}
-	e.commit(func(s *GameState) { s.HostID = id })
+	loading := e.st.Phase == PhaseLoading
+	if loading {
+		e.disarm()
+	}
+	e.commit(func(s *GameState) {
+		s.HostID = id
+		if loading {
+			s.Phase = PhaseLobby
+			s.Error = MsgLoadingInterrupted
+		}
+	})
 }
 
 // BeginLoading: the host is fetching songs. Allowed from the lobby or the final screen.
@@ -161,6 +178,7 @@ func (e *Engine) BeginLoading() bool {
 		s.Error, s.Notice = "", ""
 		s.Reveal, s.Question = nil, nil
 	})
+	e.arm(LoadingTimeoutMs, func() { e.FailLoading(MsgLoadingInterrupted) })
 	return true
 }
 
@@ -168,6 +186,7 @@ func (e *Engine) FailLoading(msg string) {
 	if e.st.Phase != PhaseLoading {
 		return
 	}
+	e.disarm()
 	e.commit(func(s *GameState) { s.Phase = PhaseLobby; s.Error = msg })
 }
 

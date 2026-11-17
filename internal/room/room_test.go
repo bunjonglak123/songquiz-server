@@ -242,6 +242,24 @@ func TestHostGoneHandsControls(t *testing.T) {
 	}
 }
 
+func TestHostLeavesWhileLoading(t *testing.T) {
+	e := newEnv(t)
+	r := e.room(true)
+	h := e.join(r, "host")
+	g := e.join(r, "guest")
+	send(r, "host", "loading", nil)
+	r.Leave("host", h)
+	e.advance(3 * time.Second)
+	s := g.state(t)
+	if s.HostID != "guest" || s.Phase != game.PhaseLobby {
+		t.Fatalf("new host should land in the lobby, not stuck loading: %+v", s)
+	}
+	send(r, "guest", "loading", nil)
+	if g.state(t).Phase != game.PhaseLoading {
+		t.Fatal("new host can't start the game")
+	}
+}
+
 func TestNonHostHostCommandsRejected(t *testing.T) {
 	e := newEnv(t)
 	r := e.room(true)
