@@ -1,0 +1,27 @@
+# docker compose up --build  →  http://localhost:8080/healthz
+services:
+  server:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://quiz:quiz@db:5432/quiz?sslmode=disable
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-localhost:3000}
+      DECK_SECRET: ${DECK_SECRET:-}
+    depends_on:
+      db:
+        condition: service_healthy
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: quiz
+      POSTGRES_PASSWORD: quiz
+      POSTGRES_DB: quiz
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quiz"]
+      interval: 2s
+      retries: 20
+volumes:
+  pgdata:
